@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Stockroom</title>
+<style>
+:root{--bg:#eef1f4;--card:#fff;--ink:#1b2733;--mut:#5d6b78;--line:#d5dce3;--acc:#0f6e8c;--acc-ink:#fff;--bad:#b8400f;color-scheme:light}
+@media (prefers-color-scheme:dark){:root{--bg:#10171e;--card:#18222c;--ink:#e6ecf1;--mut:#97a5b2;--line:#2b3946;--acc:#4fb5d6;--acc-ink:#07202a;--bad:#f08a5d;color-scheme:dark}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif}
+button,input,select{font:inherit;color:inherit}
+button{cursor:pointer;border:1px solid var(--line);background:var(--card);padding:7px 14px;border-radius:6px}
+button.p{background:var(--acc);color:var(--acc-ink);border-color:var(--acc);font-weight:500}
+button.d{color:var(--bad)}
+:focus-visible{outline:2px solid var(--acc);outline-offset:2px}
+input,select{width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:6px;background:var(--card)}
+label{display:block;font-size:13px;color:var(--mut);margin:12px 0 4px}
+.auth{max-width:380px;margin:12vh auto 0;padding:0 20px}
+.auth h1{font-size:30px;margin:0 0 4px}
+.auth .box{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:8px 20px 20px;margin-top:20px}
+.auth .box button.p{width:100%;margin-top:18px}
+.err{color:var(--bad);min-height:20px;margin-top:10px;font-size:14px}
+.hint{color:var(--mut);font-size:13px;margin-top:14px}
+.link{background:none;border:0;padding:0;color:var(--acc);text-decoration:underline}
+.shell{display:grid;grid-template-columns:200px 1fr;min-height:100vh}
+nav{border-right:1px solid var(--line);padding:20px 14px;background:var(--card)}
+nav b{display:block;font-size:19px;margin:0 8px 20px}
+nav a{display:block;padding:8px 10px;border-radius:6px;color:var(--ink);text-decoration:none;margin-bottom:2px}
+nav a[aria-current="page"]{background:var(--acc);color:var(--acc-ink);font-weight:500}
+nav .me{margin-top:24px;font-size:13px;color:var(--mut);padding:0 8px}
+main{padding:24px;max-width:1000px;width:100%}
+h2{margin:0 0 18px;font-size:22px}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-bottom:20px}
+.kpi{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:14px}
+.kpi span{color:var(--mut);font-size:13px}.kpi strong{display:block;font-size:26px}
+.panel{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:16px;margin-bottom:20px}
+.panel h3{margin:0 0 10px;font-size:16px}
+.scroll{overflow-x:auto}
+table{border-collapse:collapse;width:100%;font-size:14px}
+th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--line);white-space:nowrap}
+th{color:var(--mut);font-weight:500}
+.row{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;align-items:end}
+.low{color:var(--bad);font-weight:500}
+.tag{font-size:12px;padding:2px 8px;border-radius:99px;border:1px solid var(--line)}
+svg text{fill:var(--mut);font-size:11px}.bar{fill:var(--acc)}
+@media (max-width:700px){.shell{grid-template-columns:1fr}nav{border-right:0;border-bottom:1px solid var(--line);display:flex;flex-wrap:wrap;gap:4px;align-items:center;padding:10px}nav b,nav .me{margin:0 10px 0 0}main{padding:16px}}
+</style>
+</head>
+<body>
+<div id="app"></div>
+<script>
+const $ = s => document.querySelector(s);
+const esc = v => String(v ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const money = n => '$' + Number(n || 0).toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2});
+let user = null;
+
+async function api(path, method = 'GET', body) {
+  const res = await fetch('/api' + path, {method, credentials: 'same-origin',
+    headers: body ? {'Content-Type': 'application/json'} : {}, body: body ? JSON.stringify(body) : undefined});
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    if (res.status === 401 && user) { user = null; render(); }
+    const d = data.detail;
+    throw new Error(typeof d === 'string' ? d : Array.isArray(d) ? 'Check the highlighted fields and try again.' : 'Something went wrong.');
+  }
+  return data;
+}
+async function boot() { try { user = await api('/me'); } catch (e) { user = null; } render(); }
+function render() { user ? shell() : authView('in'); }
+
+function authView(mode) {
+  $('#app').innerHTML = `<div class="auth"><h1>Stockroom</h1><div>Track products and orders in one place.</div>
+  <div class="box"><div id="f">
+  ${mode==='up' ? '<label for="n">Name</label><input id="n" autocomplete="name">' : ''}
+  <label for="e">Email</label><input id="e" type="email" autocomplete="email">
+  <label for="pw">Password</label><input id="pw" type="password" autocomplete="${mode==='up'?'new-password':'current-password'}">
+  <div class="err" id="err" role="alert"></div>
+  <button class="p" id="go">${mode==='up' ? 'Create account' : 'Sign in'}</button></div></div>
+  <p class="hint">${mode==='up' ? 'Have an account?' : 'New here?'} <button class="link" id="sw">${mode==='up' ? 'Sign in' : 'Create an account'}</button></p>
+  ${mode==='in' ? '<p class="hint">Demo: demo@example.com / demo1234</p>' : ''}</div>`;
+  $('#sw').onclick = () => authView(mode === 'up' ? 'in' : 'up');
+  $('#f').addEventListener('keydown', e => { if (e.key === 'Enter') $('#go').click(); });
+  $('#go').onclick = async () => {
+    const email = $('#e').value.trim(), password = $('#pw').value;
+    try {
+      if (mode === 'up') await api('/register', 'POST', {name: $('#n').value.trim(), email, password});
+      else await api('/login', 'POST', {email, password});
+      user = await api('/me'); location.hash = 'dashboard'; render();
+    } catch (e) { $('#err').textContent = e.message; }
+  };
+}
+
+const pages = {dashboard: 'Dashboard', products: 'Products', orders: 'Orders', account: 'Account'};
+function shell() {
+  const cur = pages[location.hash.slice(1)] ? location.hash.slice(1) : 'dashboard';
+  $('#app').innerHTML = `<div class="shell"><nav><b>Stockroom</b>
+  ${Object.entries(pages).map(([k,v]) => `<a href="#${k}" ${k===cur?'aria-current="page"':''}>${v}</a>`).join('')}
+  <div class="me">${esc(user.name)}</div></nav><main id="main"></main></div>`;
+  views[cur]().catch(e => { const m = $('#main'); if (m) m.innerHTML = `<p class="err">${esc(e.message)}</p>`; });
+}
+window.addEventListener('hashchange', () => { if (user) shell(); });
+const showErr = e => { $('#err').textContent = e.message; };
+
+const views = {
+  async dashboard() {
+    const d = await api('/dashboard');
+    const max = Math.max(1, ...d.by_product.map(r => +r.v));
+    const bars = d.by_product.map((r, i) => { const w = Math.round(r.v / max * 300);
+      return `<text x="0" y="${i*30+17}">${esc(r.name)}</text><rect class="bar" x="110" y="${i*30+5}" width="${w}" height="16" rx="3"/><text x="${116+w}" y="${i*30+17}">${money(r.v)}</text>`; }).join('');
+    $('#main').innerHTML = `<h2>Dashboard</h2><div class="kpis">
+    <div class="kpi"><span>Revenue</span><strong>${money(d.revenue)}</strong></div>
+    <div class="kpi"><span>Open orders</span><strong>${d.open_orders}</strong></div>
+    <div class="kpi"><span>Low stock (under 10)</span><strong class="${d.low_stock?'low':''}">${d.low_stock}</strong></div></div>
+    <div class="panel"><h3>Revenue by product</h3><div class="scroll"><svg width="560" height="${d.by_product.length*30+6}" role="img" aria-label="Revenue by product">${bars}</svg></div></div>
+    <div class="panel"><h3>Recent orders</h3><div class="scroll"><table><tr><th>#</th><th>Customer</th><th>Product</th><th>Qty</th><th>Status</th></tr>
+    ${d.recent.map(r => `<tr><td>${r.id}</td><td>${esc(r.customer)}</td><td>${esc(r.product)}</td><td>${r.qty}</td><td><span class="tag">${r.status}</span></td></tr>`).join('')}</table></div></div>`;
+  },
+  async products() {
+    const rows = await api('/products');
+    $('#main').innerHTML = `<h2>Products</h2><div class="panel"><h3>Add a product</h3><div class="row">
+    <div><label for="pn">Name</label><input id="pn"></div><div><label for="ps">SKU</label><input id="ps"></div>
+    <div><label for="pp">Price</label><input id="pp" type="number" min="0" step="0.01"></div>
+    <div><label for="pk">Stock</label><input id="pk" type="number" min="0" step="1"></div>
+    <button class="p" id="add">Add product</button></div><div class="err" id="err" role="alert"></div></div>
+    <div class="panel scroll"><table><tr><th>Name</th><th>SKU</th><th>Price</th><th>Stock</th><th></th></tr>
+    ${rows.map(r => `<tr><td>${esc(r.name)}</td><td>${esc(r.sku)}</td><td>${money(r.price)}</td><td class="${r.stock<10?'low':''}">${r.stock}</td>
+    <td><button data-del="${r.id}" class="d">Delete</button></td></tr>`).join('')}</table></div>`;
+    $('#add').onclick = async () => {
+      const price = parseFloat($('#pp').value), stock = parseInt($('#pk').value, 10);
+      if (!$('#pn').value.trim() || isNaN(price) || isNaN(stock)) { $('#err').textContent = 'Enter a name, a price and a stock count.'; return; }
+      try { await api('/products', 'POST', {name: $('#pn').value, sku: $('#ps').value, price, stock}); views.products(); } catch (e) { showErr(e); }
+    };
+    document.querySelectorAll('[data-del]').forEach(b => b.onclick = async () => {
+      try { await api('/products/' + b.dataset.del, 'DELETE'); views.products(); } catch (e) { showErr(e); }
+    });
+  },
+  async orders() {
+    const [prods, rows] = await Promise.all([api('/products'), api('/orders')]);
+    $('#main').innerHTML = `<h2>Orders</h2><div class="panel"><h3>New order</h3><div class="row">
+    <div><label for="oc">Customer</label><input id="oc"></div>
+    <div><label for="op">Product</label><select id="op">${prods.map(p => `<option value="${p.id}">${esc(p.name)} (${p.stock} in stock)</option>`).join('')}</select></div>
+    <div><label for="oq">Quantity</label><input id="oq" type="number" min="1" value="1"></div>
+    <button class="p" id="add">Place order</button></div><div class="err" id="err" role="alert"></div></div>
+    <div class="panel scroll"><table><tr><th>#</th><th>Customer</th><th>Product</th><th>Qty</th><th>Date</th><th>Status</th></tr>
+    ${rows.map(r => `<tr><td>${r.id}</td><td>${esc(r.customer)}</td><td>${esc(r.product)}</td><td>${r.qty}</td><td>${esc(String(r.created).slice(0,10))}</td>
+    <td><select data-st="${r.id}" aria-label="Status of order ${r.id}">${['open','shipped','cancelled'].map(s => `<option ${s===r.status?'selected':''}>${s}</option>`).join('')}</select></td></tr>`).join('')}</table></div>`;
+    $('#add').onclick = async () => {
+      try { await api('/orders', 'POST', {customer: $('#oc').value, product_id: +$('#op').value, qty: parseInt($('#oq').value, 10) || 0}); views.orders(); } catch (e) { showErr(e); }
+    };
+    document.querySelectorAll('[data-st]').forEach(s => s.onchange = async () => {
+      try { await api('/orders/' + s.dataset.st, 'PATCH', {status: s.value}); views.orders(); } catch (e) { showErr(e); views.orders().then(() => showErr(e)); }
+    });
+  },
+  async account() {
+    $('#main').innerHTML = `<h2>Account</h2><div class="panel"><p><strong>${esc(user.name)}</strong><br>${esc(user.email)}</p>
+    <button id="out">Sign out</button></div>`;
+    $('#out').onclick = async () => { await api('/logout', 'POST').catch(() => {}); user = null; render(); };
+  }
+};
+boot();
+</script>
+</body>
+</html>
